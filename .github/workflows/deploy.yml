@@ -1,0 +1,51 @@
+# master（または main）へ push すると、テスト → ビルド → GitHub Pages への公開を行う。
+# 初回だけ、リポジトリの Settings → Pages → Source を「GitHub Actions」にしておくこと。
+name: Test and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # npm ci は lockfile に1つでも記録の抜けがあると止まる（npm 11.6 は見逃すが、10 と 12 は止まる）。
+          # 手元と版が違っても落ちないよう、lockfile の側を「どの版でも通る」状態に保つこと。
+          node-version: 24
+      - name: Install
+        run: |
+          npm ci --prefix client
+          npm ci --prefix server
+      - name: Test
+        run: npm test
+      - name: Lint
+        run: npm run lint --prefix client
+      - name: Build
+        run: npm run build --prefix client
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: client/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

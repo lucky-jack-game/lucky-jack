@@ -1,0 +1,708 @@
+/* ==========================================================================
+   ホーム画面＝グランドホールのロビー
+   --------------------------------------------------------------------------
+   部品の並びと入場の演出の時刻は client/src/LobbyScreen.jsx、絵（ホール・回廊・壁龕・主卓）は
+   LobbyArt.jsx。建材（.kj-arch / .kj-gilt / .kj-plate / .kj-door）はタイトル画面と共有するので
+   index.css に残してある。
+   語彙はファサードから変えていない: 厳格な左右対称、アーチ1つを大(壁龕)／中(扉)／回廊のアーチで反復、
+   金の二重トリム、差し色は緑青1色、下から当たる暖色の灯り。
+   **ホールは画像を使わずCSSだけで描いている。** 最遠景の画像は LobbyArt.jsx の LOBBY_BACKDROP に
+   パスを入れれば敷ける（そのときもこの層は上に重ねたまま使う）。
+   ========================================================================== */
+
+.kj-lobby {
+  position: relative;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 下部タブ(.kj-bottom-nav)はこのスクロール領域の外側の兄弟要素なので、その分の逃げは要らない。 */
+  padding: 14px 14px 20px;
+  isolation: isolate;
+  /* 回廊・床の遠近変形はホールの外へはみ出す。hidden にするとこの要素がスクロール容器になって
+     しまうので、clip で「はみ出しを描かない」だけにする。 */
+  overflow: clip;
+}
+@media (min-width: 768px) {
+  .kj-lobby { padding: 12px 24px 16px; }
+}
+
+/* ── 量塊 ────────────────────────────────────────────────────────
+   モバイル＝中央棟（壁龕＋扉）の下に左右のパネルを2列で畳む / PC＝中央棟を左右のパネルが挟む。
+   縦中央寄せは margin:auto で行う（justify-content:center は入り切らない時に上端を切り落として
+   スクロール不能にする）。DOM順は「中央棟→左→右→基壇」。モバイルはこの順で自然に並び、
+   PCだけ明示配置で左右へ振る（order で動かすとどちらかの向きで必ず不自然な順序になる）。 */
+.kj-lobby-massing {
+  width: 100%; max-width: 460px; margin: auto 0;
+  display: grid; grid-template-columns: 1fr 1fr;
+  column-gap: 10px; row-gap: 14px;
+}
+.kj-lobby-center {
+  grid-column: 1 / -1;
+  display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%;
+}
+.kj-lobby-base { grid-column: 1 / -1; }
+@media (min-width: 768px) {
+  .kj-lobby-massing {
+    max-width: 1120px;
+    grid-template-columns: minmax(176px, 1fr) minmax(380px, 460px) minmax(176px, 1fr);
+    column-gap: 28px; row-gap: 10px; align-items: center;
+  }
+  .kj-lobby-center { grid-column: 2; grid-row: 1; }
+  .kj-lobby-panel.left { grid-column: 1; grid-row: 1; justify-self: end; }
+  .kj-lobby-panel.right { grid-column: 3; grid-row: 1; justify-self: start; }
+  .kj-lobby-base { grid-row: 2; }
+}
+
+/* ── 卓へ上がる段と絨毯（LobbyScreen.jsx の .kj-lobby-approach） ──
+   台座の下から手前（PLAY）へ広がる台形。**一点透視の床と同じ向きに広がる**ので、
+   視線が卓からそのまま PLAY へ落ちる。金の縁は同じ台形を一回り大きく敷いて作る
+   （clip-path を掛けた要素には border が乗らない）。高さは負のマージンで打ち消し、
+   中央棟の背は変えない——ここが伸びると卓かパネルのどちらかが必ず痩せる。 */
+.kj-lobby-approach {
+  position: relative; width: 92%; max-width: 350px; height: 34px;
+  /* 壁龕の下辺にそのまま接がせる（中央棟の gap の分だけ引き上げる）。離すと、床に敷いた物では
+     なく宙に浮いた板に見える。下は PLAY の銘板に食い込ませて、段→絨毯→銘板をひと続きにする。 */
+  margin: -14px 0 -12px; pointer-events: none;
+}
+.kj-lobby-approach::before, .kj-lobby-approach::after {
+  content: ""; position: absolute; left: 50%; transform: translateX(-50%);
+}
+/* 足元の影だまり。絨毯を床に接地させる（影が無いと、床に敷いた物ではなく浮いた板に見える） */
+.kj-lobby-approach::before {
+  top: 2px; width: 104%; height: 100%;
+  background: radial-gradient(ellipse 60% 70% at 50% 60%, rgba(0,0,0,0.55), transparent 72%);
+}
+/* 絨毯そのもの。赤は使わない（差し色は緑青1色）——床より一段暗い毛足として敷く。
+   **縁を立てないこと。** 金の縁や明るい面を持たせると、床の一部ではなく光る板になる
+   （実際にそう見えた）。端は mask で床へ溶かし、輪郭そのものを消す。 */
+.kj-lobby-approach::after {
+  top: 0; width: 98.5%; height: 100%;
+  clip-path: polygon(35% 0, 65% 0, 91% 100%, 9% 100%);
+  background: linear-gradient(180deg, #130d08 0%, #0c0806 60%, #070504 100%);
+  -webkit-mask-image: radial-gradient(125% 104% at 50% 0%, #000 38%, transparent 92%);
+  mask-image: radial-gradient(125% 104% at 50% 0%, #000 38%, transparent 92%);
+}
+/* 段（2段）。壁龕の下辺に沿わせ、絨毯より広く取る（台座から一段下りた所）。
+   段板の上面だけにごく淡い照り返しを置き、あとは暗部に沈める。 */
+.kj-lobby-approach > i {
+  position: absolute; left: 50%; top: -4px; width: 66%; height: 11px;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg,
+    #191209 0 4px, #070504 4px 5px, #120c07 5px 10px, #050403 10px 11px);
+  box-shadow: 0 -1px 0 rgba(202,164,82,0.1), 0 9px 20px rgba(0,0,0,0.6);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+
+/* ── PLAY（入口はこの1枚だけ） ──
+   扉の建材（.kj-door / .kj-arch / .kj-gilt / .kj-plate と頂の灯り）はそのまま使い、大きさと箔押しの
+   文字だけで主役にする。光沢はときどき1回だけ走らせる（常に動く物は、押す物ではなく飾りに見える）。 */
+.kj-lobby-play { max-width: 300px; padding: 17px 12px 14px; justify-content: center; }
+.kj-lobby-play .kj-foil { animation: lobbyPlaySheen 5.2s cubic-bezier(.4,0,.2,1) 2.6s infinite; }
+@keyframes lobbyPlaySheen {
+  0% { background-position: -80% 50%, 0 50%; }
+  24% { background-position: 210% 50%, 0 50%; }
+  100% { background-position: 210% 50%, 0 50%; }
+}
+
+/* ── 左右のパネル（TODAY / RECORD） ─────────────────────────────────
+   すりガラス越しに回廊の燭台がぼけて見える。上辺は浅いアーチ（モチーフの最小スケール）。
+   **中身は実在する値だけ。** 置き場所の二重化にならないよう、押せば本来の画面へ行く。 */
+.kj-lobby-panel {
+  position: relative; width: 100%;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 16px 14px 11px;
+  color: inherit; font: inherit; text-align: left;
+  border: 1px solid var(--gilt-line);
+  border-radius: 50% 50% var(--radius-md) var(--radius-md) / 18px 18px var(--radius-md) var(--radius-md);
+  background: linear-gradient(180deg, rgba(40,29,17,0.55), rgba(14,10,6,0.72));
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  backdrop-filter: blur(10px) saturate(1.15);
+  box-shadow:
+    0 0 0 3px rgba(0,0,0,0.45),
+    0 0 0 4px var(--gilt-faint),
+    inset 0 1px 0 rgba(244,231,191,0.12),
+    0 18px 36px rgba(0,0,0,0.5);
+}
+button.kj-lobby-panel { cursor: pointer; }
+@media (min-width: 768px) {
+  .kj-lobby-panel { max-width: 214px; }
+}
+
+/* 見出し。左右に繰形（金の細線）を渡し、文字は箔押し */
+.kj-lobby-panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+.kj-lobby-panel-head::before, .kj-lobby-panel-head::after { content: ""; flex: 1; height: 1px; }
+.kj-lobby-panel-head::before { background: linear-gradient(90deg, transparent, var(--gilt-line)); }
+.kj-lobby-panel-head::after { background: linear-gradient(90deg, var(--gilt-line), transparent); }
+.kj-lobby-panel-title {
+  font-family: var(--font-display); font-weight: 800; font-size: 10px;
+  letter-spacing: 0.3em; margin-right: -0.3em;
+  background: linear-gradient(180deg, #fdf6e0 0%, #e8c874 45%, #b8923f 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+.kj-lobby-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; padding: 6px 0 5px;
+  border: 0; border-top: 1px solid rgba(202,164,82,0.12);
+  background: none; color: inherit; font: inherit; text-align: left;
+}
+.kj-lobby-panel-head + .kj-lobby-row { border-top: 0; }
+.kj-lobby-row > span:first-child { font-size: 10px; color: #a49a89; white-space: nowrap; }
+.kj-lobby-row b {
+  font-family: var(--font-display); font-weight: 700; font-size: 14px; line-height: 1;
+  color: var(--ivory); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.kj-lobby-row b small { font-size: 9px; font-weight: 500; color: #a49a89; margin-left: 1px; }
+button.kj-lobby-row { cursor: pointer; }
+button.kj-lobby-row b::after { content: "›"; margin-left: 5px; color: var(--gilt); font-weight: 400; }
+/* パネル自体が押せるので、行を押したときにパネルごと縮ませない */
+.kj-lobby-row:active:not(:disabled) { transform: none; }
+@media (hover: hover) {
+  button.kj-lobby-panel:hover { border-color: var(--gilt); }
+  button.kj-lobby-row:hover b { color: var(--gilt-bright); }
+}
+
+/* 直近の勝敗。金の菱形＝勝ち、沈んだ石＝負け、枠だけ＝まだ打っていない（繰形の菱形と同じ形） */
+.kj-lobby-pips { display: flex; gap: 5px; align-items: center; padding-right: 2px; }
+.kj-lobby-pip {
+  width: 8px; height: 8px; transform: rotate(45deg);
+  border: 1px solid var(--gilt-line); background: transparent;
+}
+.kj-lobby-pip.win {
+  background: linear-gradient(135deg, #fdf6e0, #caa452); border-color: #e8c874;
+  box-shadow: 0 0 6px rgba(232,200,116,0.5);
+}
+.kj-lobby-pip.lose { background: #2e241a; border-color: rgba(202,164,82,0.28); }
+.kj-lobby-pip.draw { background: #5a4d3b; }
+
+/* ── 基壇（遊び方） ──
+   ルーム（準備中の銘板）は提出版から外した（features.js）。 */
+.kj-lobby-base { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.kj-lobby-howto {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px 5px 10px; border-radius: 999px;
+  border: 1px solid var(--gilt-line); background: rgba(18,13,8,0.7);
+  color: var(--ivory); font: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.kj-lobby-howto svg { color: var(--gilt-bright); }
+
+/* 部屋の絵を敷く層。**アプリの外枠（.kj-app-shell）の直下**に置くので、ヘッダー（ナビ）の裏にも
+   部屋が続く。ナビは z-index 2、コンテンツは 1、この層は 0——つまり全部の下。
+   **操作を受けないこと**（pointer-events: none）：画面いっぱいの層なので、受けると下のボタンが
+   全部押せなくなる。 */
+.kj-lobby-bg {
+  position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+}
+.kj-lobby-bg .kj-lobby-hall { z-index: 0; }
+
+/* ── ホール（背景） ──────────────────────────────────────────────
+   すべて絶対配置の飾りで、中身の高さには1pxも寄与しない。遠近は perspective() を
+   transform の中に書く——transform-origin がそのまま消失点になるので、天井は下辺（奥）、
+   床は上辺（奥）を起点にすると、どちらもホールの奥の一点へ向かって窄まる。 */
+.kj-lobby-hall {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden;
+  background:
+    /* 四隅を落として中央の卓へ視線を集める。**いちばん上に重ねること**——下に置くと
+       他の層（床の市松・格天井）が四隅で明るいまま残り、暗くした意味が消える。 */
+    /* **四隅の暗がりは軽く。** 強いと、隅まで続いている壁と床がそこで途切れて見える。 */
+    radial-gradient(130% 95% at 50% 48%, transparent 66%, rgba(0,0,0,0.2) 100%),
+    /* 全体の地。**暗く落としすぎないこと**——間接照明で軽くした内装なので、
+       灯りの当たらない面も真っ黒にはしない。黒はいちばん手前の柱と天井の隅だけに残す。 */
+    radial-gradient(86% 60% at 50% 44%, rgba(202,164,82,0.12), transparent 74%),
+    linear-gradient(180deg, #0b0806 0%, #140e09 34%, #1a120b 64%, #0c0806 100%);
+}
+
+/* ── 部屋の面（形は LobbyArt.jsx が clip-path で渡す） ─────────────
+   天井・左右の壁・床は、**壁龕の四隅と画面の四隅を結んだ一点透視の面**。四隅で必ず接ぐので、
+   部品を並べた絵ではなく閉じた箱になる。**面の境に線を引かないこと**——線を引いた瞬間に
+   その線が画面を横切る帯に見えて、また「貼り合わせ」に戻る。分けるのは値（明るさ）だけ。
+   光源は卓の真上のペンダント1つ。壁は卓の側が明るく、手前（画面の端）へ向かって落ちる。 */
+.kj-lobby-ceiling { position: absolute; inset: 0; }
+.kj-lobby-wall {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(72% 120% at var(--lit) 58%, rgba(202,164,82,0.18), transparent 64%),
+    /* 天井より一段明るく取る。**同じ値にしないこと**——天井と壁の境は線ではなく値の差で
+       示しているので、値が同じだとそこが消えて箱の上半分が無くなる。
+       **画面の端で黒に落としきらないこと**：壁は隅まで続いているのに、外側が真っ黒だと
+       そこで部屋が終わって見える。下限を残す。 */
+    linear-gradient(var(--dir), #241a11 0%, #1a120b 50%, #130d09 100%);
+}
+.kj-lobby-wall.left { --lit: 100%; --dir: 270deg; }
+.kj-lobby-wall.right { --lit: 0%; --dir: 90deg; }
+
+/* 壁に並ぶ柱。位置・幅・高さは全部 LobbyArt.jsx が room から計算して渡すので、
+   ここに寸法を書かない（書いた瞬間に部屋と柱が別々の遠近を持つ）。
+   **手前ほど暗い**＝空気遠近。奥の柱は霞んで壁に溶ける。 */
+.kj-lobby-col {
+  position: absolute;
+  background-image:
+    /* 溝彫り。**柱の幅に対する割合で刻む**ので、奥の細い柱では溝も一緒に詰まる＝溝が遠近を持つ */
+    linear-gradient(90deg,
+      rgba(0,0,0,0.55) 0 22%, rgba(244,231,191,0.06) 22% 28%, transparent 28% 100%),
+    /* 上下を落として、柱頭・柱脚を「帯」ではなく暗部で示す。**明るい板を渡さないこと**——
+       画面の上の方に光る横棒が2本浮いて見える（実際にそう見えた）。 */
+    linear-gradient(180deg, rgba(0,0,0,0.62), transparent 20%, transparent 76%, rgba(0,0,0,0.68)),
+    linear-gradient(90deg, #070504 0%, #2f2214 46%, #0b0806 100%);
+  background-size: 25% 100%, 100% 100%, 100% 100%;
+  background-repeat: repeat-x, no-repeat, no-repeat;
+  /* 手前ほど暗い（空気遠近）。**暗くしすぎない**——柱が壁に沈むと、せっかく組んだ列が
+     ただの暗い染みになって奥行きの手掛かりを1つ失う。 */
+  filter: brightness(calc(1.62 - var(--depth) * 0.62));
+}
+/* **狭い画面では柱を出さない**（幅390pxでは卓と左右のパネルを痩せさせるだけ。壁と床は残る） */
+@media (max-width: 767px) {
+  .kj-lobby-col { display: none; }
+}
+
+/* 空気遠近。消失点の周りだけ霞ませる＝奥は明るく眠く、手前は暗く締まる。
+   **これが無いと、箱を正しく組んでも平らに見える**（値の差そのものが距離の手掛かり）。 */
+.kj-lobby-haze {
+  position: absolute; inset: 0;
+  background: radial-gradient(56% 44% at var(--vp-x, 50%) var(--vp-y, 50%),
+    rgba(150,120,78,0.17), rgba(60,44,26,0.06) 46%, transparent 74%);
+}
+.kj-lobby-backdrop img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.6;
+}
+
+/* 格天井。格子の中心に灯りを1つずつ落として、平らな網ではなく凹んだ格間に見せる */
+/* 格天井。**ここに transform で寝かせた面を作らないこと**——天井だけ別の消失点を持つ。
+   格間の絵は床と同じ式（LobbyArt.jsx の planeStyle）が消失点から引いて渡す。 */
+.kj-lobby-vault { position: absolute; inset: 0; }
+
+/* **水平のコーニスは置かない。** 天井と壁の境は、画面の隅と壁龕の角を結ぶ斜めの線になった
+   （部屋を箱として組んだ結果）。そこへ水平の帯を通すと、その1本だけが画面を横切って
+   箱を割る——境は面の値の差で示す（.kj-lobby-wall / .kj-lobby-ceiling）。 */
+
+/* 遠くの灯りのボケ。ゆっくり瞬いて、場所が生きていることだけを伝える（数も意味も持たせない） */
+.kj-lobby-bokeh { position: absolute; left: 0; right: 0; top: 0; height: 62%; }
+.kj-lobby-bokeh > i {
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(circle, rgba(253,246,224,0.5), rgba(232,200,116,0.16) 42%, transparent 70%);
+  animation: lobbyTwinkle var(--d) ease-in-out var(--o) infinite;
+}
+@keyframes lobbyTwinkle {
+  0%, 100% { opacity: 0.25; translate: 0 0; }
+  50% { opacity: 0.85; translate: 0 -5px; }
+}
+
+/* シャンデリア。本体は描かず、光の芯と結晶の粒（ボケ）だけで置く——描き込むほど
+   イラストに寄り、他の建材（幾何）と画風が割れる。粒は上から4・4・3・1の逆三角形に並べる。 */
+.kj-lobby-chandelier {
+  position: absolute; top: 4%; width: 170px; height: 110px;
+  background:
+    radial-gradient(circle at 50% 36%, rgba(253,246,224,0.6) 0 2px, rgba(232,200,116,0.25) 5px, transparent 20px),
+    radial-gradient(circle at 26% 46%, rgba(253,246,224,0.55) 0 1.2px, transparent 2.6px),
+    radial-gradient(circle at 38% 48%, rgba(253,246,224,0.55) 0 1.2px, transparent 2.6px),
+    radial-gradient(circle at 62% 48%, rgba(253,246,224,0.55) 0 1.2px, transparent 2.6px),
+    radial-gradient(circle at 74% 46%, rgba(253,246,224,0.55) 0 1.2px, transparent 2.6px),
+    radial-gradient(circle at 33% 60%, rgba(253,246,224,0.45) 0 1.1px, transparent 2.4px),
+    radial-gradient(circle at 44% 63%, rgba(253,246,224,0.45) 0 1.1px, transparent 2.4px),
+    radial-gradient(circle at 56% 63%, rgba(253,246,224,0.45) 0 1.1px, transparent 2.4px),
+    radial-gradient(circle at 67% 60%, rgba(253,246,224,0.45) 0 1.1px, transparent 2.4px),
+    radial-gradient(circle at 42% 74%, rgba(253,246,224,0.4) 0 1px, transparent 2.2px),
+    radial-gradient(circle at 50% 76%, rgba(253,246,224,0.4) 0 1px, transparent 2.2px),
+    radial-gradient(circle at 58% 74%, rgba(253,246,224,0.4) 0 1px, transparent 2.2px),
+    radial-gradient(circle at 50% 88%, rgba(253,246,224,0.35) 0 1px, transparent 2.2px),
+    radial-gradient(ellipse 52% 48% at 50% 48%, rgba(232,200,116,0.15), transparent 72%);
+  animation: facadeLamp 9s ease-in-out infinite;
+}
+/* 吊り鎖 */
+.kj-lobby-chandelier::before {
+  content: ""; position: absolute; left: 50%; top: -80px; width: 1px; height: 118px;
+  background: linear-gradient(180deg, transparent, var(--gilt-line));
+}
+.kj-lobby-chandelier.left { left: 2%; }
+.kj-lobby-chandelier.right { right: 2%; }
+@media (min-width: 768px) {
+  .kj-lobby-chandelier.left { left: 7%; }
+  .kj-lobby-chandelier.right { right: 7%; }
+}
+
+/* 大理石の床。市松に金の目地。奥（上辺）へ窄め、卓の足元の光を床に映す。
+   **上端（奥の辺）を固定して下へ長く取ること。** 寝かせると見かけの高さが縮むので、
+   bottom:0 で高さを決めた初版は床が画面の下端まで届かず、暗い帯が残った。 */
+/* 床。**奥の辺は壁龕の下辺そのもの**（clip-path が床の形を決める）。
+   目地は LobbyArt.jsx の floorStyle が部屋の消失点から引いて渡す——**ここに transform で
+   寝かせた面を作らないこと**：床だけ別の消失点を持ち、目地の収束先が壁と食い違う。 */
+.kj-lobby-floor { position: absolute; inset: 0; }
+.kj-lobby-floor > i { position: absolute; inset: 0; }
+
+/* 柱と柱の間の壁面。下から当てる間接照明（足元が明るく、上へ落ちる）。 */
+.kj-lobby-bay {
+  position: absolute;
+  background-image:
+    linear-gradient(180deg,
+      rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.1) 24%,
+      rgba(232,200,116,0.1) 76%, rgba(232,200,116,0.2) 100%),
+    linear-gradient(180deg, #2b1f13 0%, #1d140c 58%, #150e08 100%);
+  filter: brightness(calc(1.24 - var(--depth) * 0.3));
+}
+
+/* 壁と床の境に通す光の帯（コーブ照明）。clip-path は box-shadow も切るので、
+   滲みは drop-shadow で出す（クリップの後に掛かる）。 */
+.kj-lobby-cove {
+  position: absolute;
+  background: linear-gradient(180deg,
+    rgba(253,246,224,0.3), rgba(232,200,116,0.16) 48%, rgba(232,200,116,0.03));
+  filter: drop-shadow(0 0 12px rgba(232,200,116,0.35));
+}
+/* 天井際のコーブは上向きに光る（床際と明暗の向きを逆にする） */
+.kj-lobby-cove.ceiling {
+  background: linear-gradient(180deg,
+    rgba(232,200,116,0.04), rgba(232,200,116,0.16) 52%, rgba(253,246,224,0.28));
+}
+
+/* 奥の壁。壁龕（アーチ）の後ろに敷いて、アーチの肩に残る面を塞ぐ。
+   上端に冠の繰形、左右に落とし込み——側面の壁と同じ語彙で分節する。 */
+.kj-lobby-endwall {
+  position: absolute;
+  background:
+    linear-gradient(180deg,
+      rgba(232,200,116,0.16) 0 1.2%, rgba(0,0,0,0.42) 1.2% 3.4%, transparent 3.4%),
+    linear-gradient(90deg,
+      rgba(0,0,0,0.34) 0 4%, transparent 4% 96%, rgba(0,0,0,0.34) 96%),
+    linear-gradient(180deg, #2c2014 0%, #1b130c 58%, #120c07 100%);
+}
+/* 開口の周りの繰形（アーキボルト）。形は建材の .kj-arch をそのまま使う。 */
+.kj-lobby-archivolt {
+  position: absolute;
+  background: linear-gradient(180deg, #3b2b1a, #241a10 62%, #17100a);
+  box-shadow: inset 0 1px 0 rgba(244,231,191,0.16), 0 0 0 1px rgba(202,164,82,0.18);
+}
+
+/* 壁を走る帯（腰壁の見切り・軒）。**壁面を平らなまま残さないための分節**で、
+   これが無いと箱として正しくても「内装の入っていない箱」に見える。 */
+.kj-lobby-band { position: absolute; }
+.kj-lobby-band.dado {
+  background: linear-gradient(180deg, rgba(232,200,116,0.18), rgba(0,0,0,0.42));
+}
+.kj-lobby-band.entab {
+  background: linear-gradient(180deg, rgba(0,0,0,0.38), rgba(232,200,116,0.16));
+}
+
+/* 柱と柱の間の落とし込みパネル。窪んだ面なので、上が陰り下が明るい（間接光は下から）。 */
+.kj-lobby-bayframe {
+  position: absolute;
+  background: linear-gradient(180deg,
+    rgba(0,0,0,0.34) 0%, rgba(0,0,0,0.12) 34%, rgba(232,200,116,0.07) 100%);
+  filter: brightness(calc(1.2 - var(--depth) * 0.3));
+}
+
+/* 壁のブラケット照明。**部屋の中に光源を並べる**ための物で、明るさの理由をその場に置く。
+   **滲ませすぎないこと**：手前の1つが大きな光の玉になり、壁の器具ではなく宙に浮いた球に見える。 */
+.kj-lobby-sconce {
+  position: absolute; aspect-ratio: 1; transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    #fdf6e0 0 26%, rgba(232,200,116,0.55) 50%, rgba(232,200,116,0.1) 74%, transparent 80%);
+  filter: drop-shadow(0 0 5px rgba(232,200,116,0.38));
+  animation: facadeLamp 7s ease-in-out infinite;
+}
+/* 壁へ下ろす腕。**器具の体を1本描くだけで「浮いた玉」が「壁付けの灯り」になる。** */
+.kj-lobby-sconce::after {
+  content: ""; position: absolute; left: 50%; top: 56%; width: 1px; height: 130%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(202,164,82,0.55), transparent);
+}
+/* 柱を出さない幅では灯りも出さない（付く先の柱が無いのに灯りだけ並ぶ） */
+@media (max-width: 767px) {
+  .kj-lobby-sconce { display: none; }
+}
+
+/* ── 回廊と展示の壁龕 ─────────────────────────────────────────── */
+.kj-lobby-stagewrap { position: relative; width: 100%; max-width: 380px; }
+@media (min-width: 768px) {
+  .kj-lobby-stagewrap { max-width: 460px; }
+}
+
+/* **回廊（手前へ重ねるアーチ）は外した。** 部屋を箱として組んだ後は、あれだけが別の消失点を
+   持つ2つ目の奥行き装置になり、壁と噛み合わずに浮く。奥行きの装置は1つに絞ること。 */
+
+/* 展示の壁龕（最大のアーチ）。壁面は .kj-plate より一段暗く奥まった面にし、
+   灯りは頂のペンダントと台座の光だまりの2つだけ。 */
+.kj-lobby-alcove {
+  position: relative; width: 100%; height: 236px;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 58% 28% at 50% 88%, rgba(232,200,116,0.16), transparent 72%),
+    radial-gradient(ellipse 46% 36% at 50% 4%, rgba(253,246,224,0.12), transparent 72%),
+    linear-gradient(180deg, #1c140c 0%, #110c07 48%, #0a0705 100%);
+  /* **アーチに厚みを持たせる。** 1本の線で描いた開口は、壁に穴が空いているのではなく
+     「壁に描かれた絵」に見える。内側に暗い迫（せり）と金の細線を回すと、手前の壁の厚みぶん
+     奥に引っ込んだ面として読める。
+     **.kj-gilt の4層をここで書き直していること。** box-shadow はプロパティ単位で上書きされる
+     ので、厚みだけを足すつもりで書くと金の二重トリムが丸ごと消える（外側2層がそれ）。
+     .kj-gilt を触ったら、ここも揃えること。 */
+  box-shadow:
+    0 0 0 3px rgba(0,0,0,0.55),
+    0 0 0 4px var(--gilt-faint),
+    inset 0 1px 0 rgba(244,231,191,0.14),
+    inset 0 0 0 8px #0b0705,
+    inset 0 0 0 9px rgba(202,164,82,0.16),
+    inset 0 26px 44px rgba(0,0,0,0.5),
+    inset 0 -22px 34px rgba(0,0,0,0.42);
+}
+@media (min-width: 768px) {
+  .kj-lobby-alcove { height: 250px; }
+}
+
+/* 壁龕の頂から下がるペンダント灯 */
+.kj-lobby-pendant {
+  position: absolute; left: 50%; top: 0; width: 1px; height: 22px; transform: translateX(-50%);
+  background: linear-gradient(180deg, transparent, var(--gilt-line));
+}
+.kj-lobby-pendant::after {
+  content: ""; position: absolute; left: 50%; top: 100%; width: 9px; height: 9px;
+  transform: translate(-50%, -2px); border-radius: 50%;
+  background: radial-gradient(circle, #fdf6e0 0 25%, rgba(232,200,116,0.7) 45%, transparent 72%);
+  box-shadow: 0 0 14px 4px rgba(232,200,116,0.35);
+}
+
+/* スポット：ペンダントから台座へ落ちる光の円錐 */
+.kj-lobby-spot {
+  position: absolute; left: 50%; top: 26px; bottom: 24px; width: 90%; transform: translateX(-50%);
+  clip-path: polygon(47% 0, 53% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(253,246,224,0.13), rgba(232,200,116,0.05) 62%, rgba(232,200,116,0.02) 100%);
+  animation: facadeLamp 7.5s ease-in-out infinite;
+}
+
+/* スポットに舞う塵。光の中を下から上へ漂う */
+.kj-lobby-motes { position: absolute; left: 22%; right: 22%; top: 34px; bottom: 56px; pointer-events: none; }
+.kj-lobby-motes > i {
+  position: absolute; bottom: 0; width: 2px; height: 2px; border-radius: 50%;
+  background: rgba(253,246,224,0.9); box-shadow: 0 0 4px rgba(253,246,224,0.8);
+  opacity: 0;
+  animation: lobbyMote var(--d) linear var(--o) infinite;
+}
+@keyframes lobbyMote {
+  0% { opacity: 0; translate: 0 0; }
+  15% { opacity: 0.75; }
+  80% { opacity: 0.4; }
+  100% { opacity: 0; translate: var(--dx) -130px; }
+}
+
+/* 台座：楕円の天板と、その下に覗く側面の2枚で段を作る */
+.kj-lobby-dais {
+  position: absolute; left: 50%; bottom: 12px; width: 86%; height: 50px; transform: translateX(-50%);
+}
+.kj-lobby-dais::before, .kj-lobby-dais::after {
+  content: ""; position: absolute; left: 0; right: 0; border-radius: 50%;
+}
+.kj-lobby-dais::before {
+  top: 12px; bottom: 0;
+  background: linear-gradient(180deg, #2b2014, #0c0805);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.65);
+}
+.kj-lobby-dais::after {
+  top: 0; height: 38px;
+  background: radial-gradient(ellipse 60% 70% at 50% 40%, #3b2c1a, #1d150c 72%);
+  border: 1px solid var(--gilt-line);
+  box-shadow: inset 0 0 0 3px rgba(0,0,0,0.35), inset 0 0 0 4px var(--gilt-faint);
+}
+
+/* 主卓（3D）。透明Canvasを台座の上に重ねる。操作は受けないので pointer-events は切ってある
+   （モバイルで卓の上から縦スクロールできなくなるのを避ける）。 */
+.kj-lobby-table3d { position: absolute; left: 2%; right: 2%; top: 12%; bottom: 0; }
+
+/* 主卓（2D）。3Dが使えない時の姿。3Dの卓が押し出しているのと同じSVGを台座の上へ斜めに寝かせる。
+   札・目印は天板と同じ平面に置く（preserve-3d）ので、傾きを変えても一緒に寝る。 */
+.kj-lobby-table {
+  position: absolute; left: 50%; bottom: 32px; width: 74%; transform: translateX(-50%);
+  perspective: 640px;
+}
+.kj-lobby-table-plane {
+  position: relative; transform-origin: 50% 100%; transform: rotateX(52deg); transform-style: preserve-3d;
+}
+.kj-lobby-table-plane > img { display: block; width: 100%; height: auto; user-select: none; }
+/* 天板の厚み。手前の縁から奥（-Z）へ垂らす＝3Dの押し出しの側面に当たる */
+.kj-lobby-table-edge {
+  position: absolute; left: 3%; right: 3%; top: 100%; height: 14px;
+  transform-origin: 50% 0; transform: rotateX(-90deg);
+  border-radius: 0 0 10px 10px;
+}
+.kj-lobby-table-shadow {
+  position: absolute; left: 4%; right: 4%; bottom: -12px; height: 28px; border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.72), transparent 70%);
+}
+/* 場札の目印（と札）。枠の色は卓のトリム＝3DのSlotMarkerと同じ対応 */
+.kj-lobby-seat {
+  position: absolute; left: 50%; width: 17%; aspect-ratio: 240 / 340;
+  transform: translate(-50%, -50%);
+  border-radius: 4px;
+}
+.kj-lobby-seat > svg { display: block; width: 100%; height: 100%; }
+
+/* 入場の演出で金の縁を走る光。下辺の中央から左右対称に上へ走り、頂で出会って消える。
+   角度を @property で登録してあるので、conic-gradient のマスクそのものを動かせる
+   （未対応のブラウザでは走らずに一度に出て消えるだけ）。演出の外では見えない。 */
+@property --lj-sweep {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.kj-lobby-trace {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  border: 1.5px solid var(--gilt-bright);
+  box-shadow: 0 0 12px rgba(232,200,116,0.55), inset 0 0 14px rgba(232,200,116,0.35);
+  -webkit-mask: conic-gradient(from 180deg at 50% 55%, #000 var(--lj-sweep), transparent 0 calc(360deg - var(--lj-sweep)), #000 0);
+  mask: conic-gradient(from 180deg at 50% 55%, #000 var(--lj-sweep), transparent 0 calc(360deg - var(--lj-sweep)), #000 0);
+  opacity: 0;
+}
+
+/* ── 入場の演出（LobbyScreen.jsx の LOBBY_INTRO） ──────────────────
+   遅延はすべて root に書かれた --t-* から取る（音と3Dの札のめくりも同じ値を読む）。
+   .kj-lobby--wait はタイトル画面の裏で最初のコマに止めておく状態。
+   演出が終わるとクラスごと外れ、各要素は素の状態に戻る——**だから演出の最後のコマは、
+   必ず素の状態と一致させること**（一致しないと、演出の終わりに一瞬で見た目が跳ぶ）。 */
+.kj-lobby--wait, .kj-lobby--wait *, .kj-lobby--wait *::before, .kj-lobby--wait *::after {
+  animation-play-state: paused !important;
+}
+.kj-lobby--intro .kj-lobby-hall { animation: lobbyHallIn 1700ms cubic-bezier(.2,.7,.2,1) var(--t-hall) both; }
+.kj-lobby--intro .kj-lobby-alcove { animation: lobbyFadeIn 700ms ease var(--t-alcove) both; }
+/* 素の状態の明滅(facadeLamp)を残したまま、後ろに点灯を重ねる（同じ opacity なら後ろが勝つ） */
+.kj-lobby--intro .kj-lobby-chandelier {
+  animation: facadeLamp 9s ease-in-out infinite, lobbyLightOn 700ms ease var(--t-chandelier) both;
+}
+.kj-lobby--intro .kj-lobby-chandelier.right { animation-delay: 0s, calc(var(--t-chandelier) + 140ms); }
+/* 柱は**奥から手前へ**順に浮かび上がる（--depth がそのまま遅延になる＝部屋が奥から立ち上がる） */
+.kj-lobby--intro .kj-lobby-col {
+  animation: lobbyFadeIn 700ms ease calc(var(--t-arches) + var(--depth) * 260ms) both;
+}
+.kj-lobby--intro .kj-lobby-trace { animation: lobbyTrace 1100ms cubic-bezier(.45,0,.2,1) var(--t-trace) both; }
+.kj-lobby--intro .kj-lobby-pendant::after { animation: lobbyLightOn 520ms ease var(--t-lamp) both; }
+.kj-lobby--intro .kj-lobby-spot {
+  animation: facadeLamp 7.5s ease-in-out infinite, lobbyFadeIn 520ms ease var(--t-spot) both;
+}
+.kj-lobby--intro .kj-lobby-table,
+.kj-lobby--intro .kj-lobby-table3d { animation: lobbyRise 700ms cubic-bezier(.2,.8,.2,1) var(--t-table) both; }
+/* 段と絨毯は卓と同じ拍で現れる（卓が据わってから、そこへ上がる道が伸びる）。
+   **必ず演出に載せること**——載せないと、暗転の中に絨毯だけが最初から浮いている。 */
+.kj-lobby--intro .kj-lobby-approach { animation: lobbyFadeIn 620ms ease var(--t-table) both; }
+.kj-lobby--intro .kj-lobby-play { animation: lobbyRise 620ms cubic-bezier(.2,.8,.2,1) var(--t-play) both; }
+.kj-lobby--intro .kj-lobby-panel.left { animation: lobbySlideL 700ms cubic-bezier(.2,.8,.2,1) var(--t-panels) both; }
+.kj-lobby--intro .kj-lobby-panel.right {
+  animation: lobbySlideR 700ms cubic-bezier(.2,.8,.2,1) calc(var(--t-panels) + 100ms) both;
+}
+.kj-lobby--intro .kj-lobby-base { animation: lobbyFadeIn 500ms ease var(--t-base) both; }
+
+@keyframes lobbyHallIn {
+  from { opacity: 0; transform: scale(1.06); }
+  40% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lobbyFadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* 灯りが入るときの一瞬のちらつき。蛍光灯ではなく白熱灯なので、2回で落ち着かせる */
+@keyframes lobbyLightOn {
+  0% { opacity: 0; }
+  28% { opacity: 0.8; }
+  40% { opacity: 0.12; }
+  56% { opacity: 0.95; }
+  68% { opacity: 0.45; }
+  100% { opacity: 1; }
+}
+@keyframes lobbyTrace {
+  0% { --lj-sweep: 0deg; opacity: 1; }
+  62% { --lj-sweep: 180deg; opacity: 1; }
+  100% { --lj-sweep: 180deg; opacity: 0; }
+}
+/* transform ではなく translate を動かす——.kj-lobby-table は位置合わせに transform を使っている */
+@keyframes lobbyRise { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: 0 0; } }
+@keyframes lobbySlideL { from { opacity: 0; translate: -20px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes lobbySlideR { from { opacity: 0; translate: 20px 0; } to { opacity: 1; translate: 0 0; } }
+
+/* ── PLAY を押した後：主卓へ潜る（LobbyScreen.jsx の LOBBY_DIVE_MS） ──
+   ロビー全体を主卓の中心（--dive-origin）へ向けて拡大しながら、光が満ちて消える。
+   見ていた卓にそのまま入っていく——次に出る対戦画面の卓はこの卓そのもの。 */
+.kj-lobby--leaving {
+  pointer-events: none;
+  transform-origin: var(--dive-origin, 50% 40%);
+  animation: lobbyDive var(--dive-ms, 640ms) cubic-bezier(.55,0,.8,.3) forwards;
+}
+@keyframes lobbyDive {
+  0% { transform: none; filter: brightness(1); opacity: 1; }
+  55% { filter: brightness(1.3); opacity: 1; }
+  100% { transform: scale(2.2); filter: brightness(1.8); opacity: 0; }
+}
+
+/* ── ロード画面（LobbyScreen.jsx の GameLaunchScreen） ──
+   .kj-app-shell の外側に置く全面の層（タイトル画面と同じ扱い。PC横長の CSS zoom は掛からない）。
+   ディーラーが札を切る所だけを見せる。敷いている色は装備中の卓のフェルト。
+   進捗の線は最低表示時間（--launch-ms）で88%まで伸び、本当に読み終わったら満ちる——
+   読み込みが長引いたときは88%で待つので、「進んでいるふりをして止まる」ことはあっても
+   「満ちたのに開かない」ことは起きない。 */
+.kj-launch {
+  position: fixed; inset: 0; z-index: 190;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  /* 札の真上から当たる灯りと、その下のフェルト。フェルトの色は装備中の卓スキン */
+  background:
+    radial-gradient(ellipse 16% 12% at 50% 44%, rgba(253,246,224,0.10), transparent 70%),
+    radial-gradient(ellipse 34% 26% at 50% 46%, var(--launch-felt, #123322), transparent 72%),
+    radial-gradient(120% 78% at 50% 100%, rgba(202,164,82,0.1), transparent 60%),
+    linear-gradient(180deg, #05040a 0%, #0b0806 56%, #100b07 100%);
+  animation: lobbyFadeIn 260ms ease both;
+}
+.kj-launch--leaving { pointer-events: none; animation: launchOut var(--launch-reveal, 460ms) ease forwards; }
+@keyframes launchOut { from { opacity: 1; } to { opacity: 0; } }
+
+.kj-launch-deck { position: relative; width: 72px; height: 102px; }
+.kj-launch-card {
+  position: absolute; inset: 0;
+  animation: launchShuffle 1.2s cubic-bezier(.45,0,.25,1) calc(var(--i) * 90ms) infinite;
+}
+.kj-launch-card:nth-child(1) { --dx: -44px; --r: -10deg; }
+.kj-launch-card:nth-child(2) { --dx: 0px; --dy: -10px; --r: 0deg; }
+.kj-launch-card:nth-child(3) { --dx: 44px; --r: 10deg; }
+.kj-launch-card svg { display: block; filter: drop-shadow(0 6px 10px rgba(0,0,0,0.6)); }
+@keyframes launchShuffle {
+  0%, 100% { transform: none; }
+  35% { transform: translate(var(--dx), var(--dy, 0px)) rotate(var(--r)); }
+  60% { transform: none; }
+}
+.kj-launch-caption {
+  font-family: var(--font-display); font-weight: 700; font-size: 11px;
+  letter-spacing: 0.42em; margin-right: -0.42em; color: var(--gilt);
+  animation: titleStart 2s ease-in-out infinite;
+}
+.kj-launch-bar { width: 160px; height: 1px; background: var(--gilt-faint); overflow: hidden; }
+.kj-launch-bar > i {
+  display: block; height: 100%; width: 0;
+  background: linear-gradient(90deg, var(--gilt), var(--gilt-bright));
+  box-shadow: 0 0 6px rgba(232,200,116,0.6);
+  animation: launchBar var(--launch-ms, 1100ms) cubic-bezier(.2,.6,.3,1) forwards;
+}
+.kj-launch-bar.done > i { animation: launchBarDone 200ms ease-out forwards; }
+@keyframes launchBar { to { width: 88%; } }
+@keyframes launchBarDone { from { width: 88%; } to { width: 100%; } }
+
+/* ── 背の低い画面では部品を詰める ─────────────────────────────────────────
+   **ホームは送れない画面にしてある**（LobbyScreen.jsx の根が overflow:hidden）。送れると、外枠の直下に
+   敷いた部屋（背景）は止まったまま中身だけが動く。だから入り切らない高さでは、送らせる代わりに部品の方を詰める。
+   実測で中身がはみ出していたのは 360×640（23px）。高さはヘッダーとメニューバーを含んだ画面全体の値。
+   **このファイルの末尾に置くこと**——同じ詳細度の上の規則（壁龕の 236px など）に後勝ちで効かせるため。 */
+@media (max-width: 767px) and (max-height: 700px) {
+  .kj-lobby { padding: 8px 12px 10px; }
+  .kj-lobby-massing { row-gap: 10px; }
+  .kj-lobby-center { gap: 8px; }
+  .kj-lobby-alcove { height: 200px; }
+}
+@media (max-width: 767px) and (max-height: 600px) {
+  .kj-lobby-alcove { height: 164px; }
+  .kj-lobby-panel { padding: 12px 12px 8px; }
+  .kj-lobby-play { padding: 13px 12px 11px; }
+}
+/* PC横長は外枠に CSS zoom(1.4) が掛かるので、壁龕の250pxは画面上では350pxになる。
+   背の低い窓（ノートPCでブラウザの帯を引いた高さなど）では、実測で 1280×650 のとき遊び方のボタンが
+   15px 画面の下へはみ出していた。ここも送らせずに壁龕を低くして収める（値は zoom を掛ける前の px）。 */
+@media (min-width: 768px) and (max-height: 720px) {
+  .kj-lobby { padding: 8px 24px 10px; }
+  .kj-lobby-alcove { height: 200px; }
+}
+@media (min-width: 768px) and (max-height: 600px) {
+  .kj-lobby-alcove { height: 160px; }
+  .kj-lobby-play { padding: 13px 12px 11px; }
+}

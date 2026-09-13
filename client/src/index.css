@@ -1,0 +1,899 @@
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* **ページそのものはスクロールさせない。** 送るのは各画面の中のスクロール領域だけ。
+   ページが送れると、スマホのChromeでは画面の下に固定しているはずのメニューバーまで一緒に
+   画面の外へ流れる。 */
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* アプリの根。**高さは 100dvh（いま実際に見えている高さ）で取ること。100vh にしないこと。**
+   スマホのChromeの 100vh は「アドレスバーが隠れた時の高さ」なので、アドレスバーが出ている間は
+   根がそのぶん画面より長くなり、いちばん下のメニューバーが画面の外に押し出されていた。
+   dvh を知らない古いブラウザは1行目の 100vh を使う。 */
+.kj-app-root {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+}
+
+body {
+  color-scheme: dark;
+  /* 本文フォント。見出し・数字は個別に --font-display を指定した要素が上書きする
+     （継承の上書きに過ぎないので、ここは「指定が無い所の既定」だけを決めている）。
+     かつて本文テキストの大半は明示指定が無くブラウザ標準sans-serifに落ちており、
+     カード/卓の世界観と噛み合っていなかった。 */
+  font-family: var(--font-body);
+  /* **文字を選択できないようにする**。ここはボタンとカードで出来た画面なので、
+     ラベルが青く反転するのは操作の失敗にしか見えない。触る端末の長押しメニューも同じ理由で止める。
+     **選択できるべき場所は下で明示的に戻す**——全部禁止にすると、名前の入力欄で文字を選べない
+     という実害が出る（消せない文字を打ち直す羽目になる）。 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* 選択を戻す場所: 入力欄と、読ませる本文（.kj-selectable を付けた所）。 */
+input, textarea, [contenteditable="true"], .kj-selectable {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* ── 開閉する設定の節（screens/SettingsScreen.jsx） ──
+   見出しの行そのものが開閉のボタン。**閉じている時も何の節かが読めるように**、
+   見出しは常に出したまま中身だけを畳む（節ごと消すと、探している設定がどこにあるか分からなくなる）。 */
+.kj-fold-head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 0; border: none; background: transparent; cursor: pointer;
+  font-family: var(--font-display); font-size: 14px; color: #a49a89;
+  text-align: left;
+}
+.kj-fold-head:hover { color: var(--gilt-bright, #e8c874); }
+/* 矢印は ChevronLeftIcon（左向き）1つを回して使う: 閉じている時は右向き、開いたら下向き。
+   **回転はここだけで持つこと**——アイコン側にも inline で回転を掛けると二重に回る。 */
+.kj-fold-chev { margin-left: auto; display: flex; transform: rotate(180deg); transition: transform 0.18s ease; }
+.kj-fold-head[aria-expanded="true"] .kj-fold-chev { transform: rotate(270deg); }
+
+/* ─── 設定画面：モーション低減・文字サイズ ───
+   個々のアニメーション呼び出し箇所を全て書き換える代わりに、html[data-*]属性で横断的に上書きする。 */
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] *::before,
+html[data-reduce-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+html[data-text-scale="small"] .kj-app-shell { zoom: 0.9; }
+html[data-text-scale="large"] .kj-app-shell { zoom: 1.15; }
+
+/* PC横長は既定でやや拡大表示にする（ブラウザズーム175%相当の見た目をデフォルトにする）。
+   文字サイズ設定(small/normal/large)は、このPC既定倍率に対する相対値として重ねて適用する。
+   モバイル縦長は元の等倍のまま（小画面をさらに拡大するとレイアウトが崩れるため対象外）。 */
+@media (min-width: 768px) {
+  .kj-app-shell { zoom: 1.4; }
+  html[data-text-scale="small"] .kj-app-shell { zoom: 1.2; }
+  html[data-text-scale="large"] .kj-app-shell { zoom: 1.6; }
+}
+
+/* ==========================================================================
+   デザイントークン
+   角丸3段階 + ダーク背景の階層は「境界線で囲う」のではなく明度差(SURFACE)で作る。
+   ========================================================================== */
+:root {
+  /* ─── 書体 ───
+     **フォントの指定はここ2行だけ。** 以前は同じ指定文字列が .jsx と .css の28箇所へベタ書きされて
+     おり、差し替えるには全部を書き換える必要があった（1箇所でも漏らすと、その要素だけ別の書体で
+     出る）。JS側は shared.jsx の FONT が var() をそのまま返すので、**書体を変えるのはこの2行**。
+
+     Interを選んだ理由は「1と7を見間違えない」こと。前任のOrbitronは正方形基調の
+     装飾書体で、"1"がほぼ裸の縦棒・"0"が角張った正方形になり、進捗表やライフのような**小さくて
+     数字しか出ない枠**で読み取りに一拍かかっていた。Interは画面のUI用に設計されていて、
+     "1"に旗が付き・x-heightが高いので、9〜11pxのUP/DOWNやモバイルの16px幅のマスでも潰れない。
+     ネオン風の書体を捨てること自体は方向転換ではない——ホームをリゾートホテルのファサードに
+     作り替えた時点で、ラスベガスのネオンの語彙は既に外している。
+
+     **日本語グリフを持たない書体を先頭に置く以上、フォールバック先は必ず本文書体にすること。**
+     怠るとその要素の日本語だけがOS標準へ無言で落ち、画面上の日本語が2種類に割れる。 */
+  --font-display: 'Inter', 'Zen Kaku Gothic New', 'Noto Sans JP', sans-serif;
+  --font-body: 'Zen Kaku Gothic New', 'Noto Sans JP', sans-serif;
+
+  --radius-sm: 6px;   /* バッジ・小ボタン・数字チップ */
+  --radius-md: 14px;  /* カード・パネル・入力 */
+  --radius-lg: 24px;  /* モーダル・大きな告知パネル・アプリ全体の外枠(デスクトップ) */
+
+  --color-bg: #08080d;        /* 最も暗い土台 */
+  --color-panel: #0f0f18;     /* 土台より一段明るいパネル */
+  --color-panel-self: #101a2c;/* 自分側パネル(青みがかった同じ明度階層) */
+  --color-card: #171721;      /* パネルよりさらに一段明るいカード/ボタン休止面 */
+  --hairline: rgba(255,255,255,0.08);
+  --hairline-strong: rgba(255,255,255,0.16);
+
+  --gold: #e8c874;
+  --gold-soft: rgba(232,200,116,0.18);
+  --point-gold: #F2C230;
+  --flame: #FF8C32;
+  --penalty: #FF4D4D;
+  --win: #4ade80;
+  --lose: #f87171;
+  --felt: #0a1f14;      /* 賭け卓を想起させる暗緑（対戦画面パネル背景用） */
+
+  /* ── ファサード（ホーム画面）のパレット ──
+     リゾートホテルの外観のような洗練を狙って追加。
+     値は3Dカード/卓(three/cardSvgBuilders.js, three/tableSvgBuilders.js)が既に確立している
+     アンティークゴールド(#b8923f→#caa452)・象牙(#f4e7bf)・マホガニーのレール(#1c0f08)から
+     そのまま採っている（UI側が寒色黒+白ヘアラインで、カードだけが暖色・物質・光でできていて
+     世界が2つに割れていた、という診断への対処）。差し色は屋根の緑青1色に絞る。 */
+  --facade-night: #0b0806;      /* 暖色の夜空 */
+  --facade-stone: #171009;      /* 壁面（灯りの当たらない面） */
+  --facade-stone-lit: #241a10;  /* 壁面（灯りの当たる面） */
+  --gilt: #caa452;              /* 金のトリム */
+  --gilt-bright: #e8c874;
+  --gilt-line: rgba(202,164,82,0.42);
+  --gilt-faint: rgba(202,164,82,0.16);
+  --verdigris: #59a28d;         /* 屋根の緑青＝唯一の差し色 */
+  --ivory: #f4e7bf;             /* 文字・数値（カードの数字グリフと同色） */
+
+  --breakpoint-desktop: 768px;
+}
+
+/* ボタンの最低限のマイクロインタラクション（押下時にわずかに縮む） */
+button {
+  transition: transform 0.12s ease, filter 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease;
+}
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* 手札/宣言カード選択ボタン：カーソルを合わせたカードだけ少し拡大して視認性を上げる */
+.kj-card-hoverable {
+  transition: transform 0.16s cubic-bezier(.2,.8,.3,1), filter 0.16s ease;
+}
+@media (hover: hover) {
+  .kj-card-hoverable:hover {
+    transform: translateY(-6px) scale(1.1);
+    filter: brightness(1.12);
+    z-index: 5;
+  }
+}
+.kj-card-hoverable:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* 設定/キャリア/ショップ/スキンなどのスクロール画面：PC横長では横幅を制限して読みやすくする。
+   height/overflow-yは呼び出し側のレイアウト(flex:1 or height:100%)に委ねる。 */
+.kj-page-scroll {
+  padding: 14px 14px 90px;
+}
+@media (min-width: 768px) {
+  .kj-page-scroll {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 22px 20px 60px;
+  }
+}
+
+/* ==========================================================================
+   レスポンシブ・レイアウト転換
+   ブレークポイント: ~767px = モバイル縦長 / 768px以上 = PC横長
+   PC横長は「電話フレームを広げた中央ダッシュボード」ではなく、フォートナイトの
+   ロビーのようにビューポート全面を使うフルブリード構成にする（配色は変えない）。
+   ========================================================================== */
+
+/* アプリ全体の外枠：モバイル/PC問わず常にフルブリード。奥行きは角丸や浮遊シャドウではなく
+   内側のアンビエントグロー(inset box-shadow)だけで出す。 */
+.kj-app-shell {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: inset 0 0 160px rgba(232,200,116,0.06);
+}
+
+.kj-shell-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ナビゲーション：モバイル=下部タブ / PC=上部（ロゴ / タブ / 状態 の3列で、タブが画面の中央） */
+.kj-bottom-nav { display: flex; }
+.kj-top-nav { display: none; }
+.kj-status-bar-mobile { display: flex; }
+@media (min-width: 768px) {
+  .kj-bottom-nav { display: none; }
+  .kj-top-nav { display: grid; }
+  .kj-status-bar-mobile { display: none; }
+}
+
+/* **ナビは「帯」ではなく1つ1つのボタン**。ロビーを空間として
+   作り込んだぶん、上に平らな帯が1本通っているだけで、そこだけ普通のWebサイトに見えていた。
+   バー自身は背景も境界線も持たず、押せる物だけが浮いている状態にする。
+   タブは中央（3列グリッドの真ん中）。左右の列は 1fr なので、ロゴと状態の幅が違っても中央はぶれない。 */
+.kj-top-nav {
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  /* 768〜900px の狭いデスクトップ幅で総幅が収まらない場合の安全弁（右端が切れて消えるのを防ぐ）。 */
+  overflow-x: auto;
+}
+.kj-nav-row { display: flex; gap: 6px; }
+
+/* アイコンの下に名称。ホバーで色と大きさが変わる。
+   触る端末では hover が貼り付くので (hover: hover) の中だけに書く。 */
+.kj-nav-btn {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 14px 10px; border-radius: 12px;
+  border: 1px solid transparent; background: transparent;
+  color: #a49a89; cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.kj-nav-btn .kj-nav-ico { display: flex; transition: transform 0.18s ease; }
+.kj-nav-btn .kj-nav-label { font-size: 11px; letter-spacing: 0.06em; white-space: nowrap; }
+/* 選択中は下に金の線を1本引く。
+   **線は幅いっぱいに渡さず、両端を落として消すこと。** 端まで引くと1本の帯の区画に見え、
+   バー自体を持たない作り（背景も境界線も持たせていない）と噛み合わなくなる。
+   inset は % で取る——PCの上部ナビ(padding 8px 14px)とモバイルの下部タブ(padding 6px 0)で
+   左右の余白が違うので、px で置くと片方だけ線が長くなる。 */
+.kj-nav-btn::after {
+  content: ""; position: absolute; left: 18%; right: 18%; bottom: 2px; height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, rgba(232, 200, 116, 0), var(--gilt-bright, #e8c874), rgba(232, 200, 116, 0));
+  box-shadow: 0 0 6px rgba(232, 200, 116, 0.45);
+  transform: scaleX(0); opacity: 0;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.kj-nav-btn.is-active { color: var(--gilt-bright, #e8c874); }
+.kj-nav-btn.is-active::after { transform: scaleX(1); opacity: 1; }
+.kj-nav-btn.is-active .kj-nav-label { font-family: var(--font-display); font-weight: 700; }
+@media (hover: hover) {
+  /* **ホバーは選択より弱く見せること。** 縁＋下地の銘板のままにすると、ホバーした項目の方が
+     選択中（線1本）より強く見え、「いまどこに居るか」を線が主張できなくなる（実際にそう見えた）。
+     色と持ち上がりに留め、縁と下地は持たせない。 */
+  /* **線は選択にだけ引く。** ホバーで薄く先出しする版も試したが、2pxの線を透かすと地に沈んで
+     何も見えず、効かないルールが残るだけだった（実測）。濃くすれば見えるが、それは選択の合図を
+     2箇所で出すことになる。 */
+  .kj-nav-btn:hover { color: var(--gilt-bright, #e8c874); transform: translateY(-2px); }
+  .kj-nav-btn:hover .kj-nav-ico { transform: scale(1.12); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kj-nav-btn, .kj-nav-btn .kj-nav-ico, .kj-nav-btn::after { transition: none; }
+  .kj-nav-btn:hover, .kj-nav-btn:hover .kj-nav-ico { transform: none; }
+  /* 線は「伸びる」のをやめるだけで、出す・消すは残す（どこに居るかの手掛かりなので）。 */
+  .kj-nav-btn::after { transform: scaleX(1); }
+}
+
+/* モバイルの下部タブも同じボタン。**境界線の1本で仕切らない**——下端は暗さへ溶かす。 */
+.kj-bottom-nav {
+  gap: 4px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(8, 6, 5, 0) 0%, rgba(8, 6, 5, 0.94) 45%);
+  flex-shrink: 0;
+}
+.kj-bottom-nav .kj-nav-btn { flex: 1; padding: 6px 0; }
+
+/* ホーム以外の画面に敷く幕。
+   **外枠（.kj-app-shell）の直下に1枚だけ敷くこと。** 画面ごとに背景を持たせる形にすると、
+   ナビの裏だけが素の地のまま残る——キャリアがまさにそれで、画面は透けているのにナビの帯だけ
+   ぼけていなかった。ナビは中身より上（z-index 2）に居るので、外枠の直下に
+   敷けば1枚でナビの裏まで届く。
+   z-index は 1。**ロビーの部屋（.kj-lobby-bg）は 0、中身とナビは 1/2 なので、
+   「部屋だけをぼかして中身は素通し」がこの1行で決まる**（同じ 1 の中身はDOM順で上に来る）。
+   pointer-events は none（画面いっぱいの層なので、受けると下のボタンが全部死ぬ）。 */
+/* **濃くしすぎないこと。** 0.58 で敷いた版は、ぼけてはいるが部屋が黒く潰れて見えず、
+   背景を出した意味がその画面だけ消えていた（四隅の暗がりで一度踏んだのと同じ失敗）。
+   ぼかしで下の絵を退かせ、濃さは「文字が読める最低限」に留める——中身の行はどれも自前の
+   下地を持っているので、ここで稼ぐ必要は無い。 */
+.kj-shell-veil {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: rgba(11, 8, 6, 0.38);
+  -webkit-backdrop-filter: blur(16px) saturate(0.95);
+  backdrop-filter: blur(16px) saturate(0.95);
+}
+
+/* 小さな吹き出し。キャリアの履歴のバッジに
+   カーソルを合わせると意味が出る。**OS標準の title 属性は使わない**
+   ——出るまでに一拍あり、見た目もそこだけ別のアプリになる。
+   **触る端末には出さないこと**（(hover: hover) の中だけに書く）——タップでホバーが貼り付き、
+   一度触った札にだけ吹き出しが残り続ける。 */
+.kj-hint { position: relative; }
+.kj-hint::after {
+  content: attr(data-hint);
+  position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  padding: 5px 9px; border-radius: 5px; white-space: nowrap;
+  background: rgba(8, 6, 4, 0.97); border: 1px solid var(--gilt-line);
+  color: var(--ivory); font-size: 10px; letter-spacing: 0.02em; line-height: 1;
+  opacity: 0; pointer-events: none; transition: opacity 0.14s ease; z-index: 30;
+}
+@media (hover: hover) {
+  .kj-hint:hover::after { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kj-hint::after { transition: none; }
+}
+
+/* ヘッダー右側：残高と名札を1つの薄い縁にまとめる。
+   2つを別々に縁取ると、同じ「自分の状態」が2枚の札に割れて見える。 */
+.kj-header-status {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 6px 4px 12px; border-radius: 999px;
+  border: 1px solid var(--gilt-line); background: rgba(20, 14, 8, 0.55);
+}
+
+/* ==========================================================================
+   ホーム（ロビー）とタイトル画面が共有する建材
+   --------------------------------------------------------------------------
+   ロビーそのものの見た目は client/src/lobby.css（LobbyScreen.jsx が読み込む）。ここに残すのは
+   タイトル画面・ロビー・ヘッダーが共有する物だけ: 箔押しのロゴ、夜空、アップライト、
+   アーチ／金の二重トリム／石の壁面の3つの建材、扉、ヘッダーの名札。
+   建材の由来はリゾートホテルの外観を建築の言語に翻訳した
+   ファサード。モチーフはアーチ1つに絞り、大きさだけを変えて反復する。差し色は緑青の1色だけ。
+   ========================================================================== */
+
+/* ヘッダー右上の名札（screens/HeaderStatus.jsx の PlayerPlate）。表示だけで押せない。
+   段位はバッジ単体にせず段位名を並べる（rank.js / RankProgressPanel と同じ規則）。 */
+/* 縁は外側の .kj-header-status が持つので、名札自身は持たない（縁の二重掛けを避ける）。 */
+.kj-player-plate {
+  display: flex; align-items: center; padding: 3px 10px;
+  border-radius: 999px; border: 1px solid transparent; background: transparent;
+  color: inherit; font: inherit;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+/* **反応するのは button で出ている時だけ。** 提出版のヘッダーは押せない名札（div）なので、
+   ここで一律に cursor とホバーを付けると「押せるように見えて何も起きない」状態になる
+   。 */
+button.kj-player-plate { cursor: pointer; }
+@media (hover: hover) {
+  button.kj-player-plate:hover {
+    background: rgba(232, 200, 116, 0.1); border-color: rgba(232, 200, 116, 0.28);
+  }
+}
+.kj-player-plate.compact { padding: 2px 8px; }
+.kj-player-plate.compact .name { max-width: 84px; font-size: 11px; }
+/* スマホでも称号を出す（HeaderStatus.jsx の注記）。バーの高さを抑えるため字だけ小さくし、幅は名前と揃える。 */
+.kj-player-plate.compact .title { max-width: 84px; font-size: 8px; }
+.kj-player-plate-text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.1; min-width: 0; }
+.kj-player-plate-text .name {
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; font-weight: 700; color: var(--ivory);
+}
+.kj-player-plate-text .rank {
+  display: flex; align-items: center; gap: 3px;
+  font-family: var(--font-display); font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+}
+/* オンラインを出さない版（features.js）は段位の代わりに装備中の称号を添える */
+.kj-player-plate-text .title {
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 9px; color: var(--gilt);
+}
+
+/* ヘッダーの小さなロゴも銘板と同じ金箔にする。ここだけフラットな#e8c874のままだと、
+   すぐ下にある本体の銘板と並んで「2種類の金」に見えてしまう。 */
+.kj-brandmark {
+  font-family: var(--font-display); letter-spacing: 2px; white-space: nowrap;
+  background: linear-gradient(180deg, #fdf6e0 0%, #e8c874 40%, #b8923f 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* 夜空：上ほど暗く落ち、地面際がわずかに暖色に灯る */
+.kj-facade-sky {
+  position: absolute; inset: 0; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(120% 78% at 50% 100%, rgba(202,164,82,0.14), transparent 60%),
+    linear-gradient(180deg, #05040a 0%, var(--facade-night) 52%, #100b07 100%);
+}
+
+/* アップライト：建物を下から照らす灯り。ロビーの灯りらしく、ごくゆっくり明滅する */
+.kj-facade-uplight {
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  width: min(720px, 140%); height: 84%;
+  z-index: -1; pointer-events: none;
+  background: radial-gradient(ellipse 52% 100% at 50% 100%,
+    rgba(232,200,116,0.16), rgba(202,164,82,0.05) 44%, transparent 70%);
+  animation: facadeLamp 7.5s ease-in-out infinite;
+}
+@keyframes facadeLamp {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}
+
+/* ── 共通の建材 ────────────────────────────────────────────────── */
+
+/* アーチ：このファサードで唯一使う形。大きさだけを変えて反復する。 */
+.kj-arch { border-radius: 48% 48% var(--radius-md) var(--radius-md) / 34% 34% 0 0; }
+
+/* 金の二重トリム（コーニス）。box-shadowのリングは要素のborder-radiusに従うため、
+   アーチ形のままきれいに縁取られる。 */
+.kj-gilt {
+  border: 1px solid var(--gilt-line);
+  box-shadow:
+    0 0 0 3px rgba(0,0,0,0.55),
+    0 0 0 4px var(--gilt-faint),
+    inset 0 1px 0 rgba(244,231,191,0.14),
+    inset 0 -22px 34px rgba(0,0,0,0.42);
+}
+
+/* 石の壁面。上端に灯りが当たり、下へ向かって落ちる。 */
+.kj-plate {
+  background: linear-gradient(180deg, var(--facade-stone-lit) 0%, var(--facade-stone) 56%, #0d0906 100%);
+}
+
+/* ── 報酬ボックスの開封（screens/ShopScreen.jsx） ──────────────
+   **`.kj-app-shell` の外側へ portal する全面の層**（ロード画面 `.kj-launch` と同じ扱い。
+   PC横長の CSS zoom が掛からない）。ショップのページの中に absolute で敷いていた版には
+   2つの破綻があった: 棚の行が透けて「一覧の上に浮いた小窓」にしか見えないことと、
+   ページがスクロールしていると層が画面の外に残ること（モバイルで起こりうる）。
+
+   materialはロビーと同じ3枚だけで組む（`.kj-arch`／`.kj-gilt`／`.kj-plate`）——ここで
+   独自の背景や縁を足すと、また「同じ画面に違う材質」が混ざる。 */
+.kj-reward {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  padding: 16px;
+  background:
+    radial-gradient(ellipse 26% 20% at 50% 38%, rgba(232,200,116,0.12), transparent 70%),
+    radial-gradient(120% 80% at 50% 100%, rgba(202,164,82,0.07), transparent 60%),
+    linear-gradient(180deg, #05040a 0%, #0b0806 58%, #100b07 100%);
+  animation: rewardLayerIn 220ms ease both;
+}
+@keyframes rewardLayerIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* 灯りの当たる壁龕。**中身を囲う形で敷く**（画面の中央に固定寸法の矩形として置かない）。
+   固定寸法で置いた版は、下に並ぶ「閉じる」が壁龕の下辺に重なって縁を跨いでいた。
+   最小寸法を持たせてあるのは、箱の拍（アイコン1つ）と札の拍で壁龕の大きさが跳ばないようにするため。 */
+.kj-reward-stage {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  min-width: 228px; min-height: 276px;
+  padding: 26px 30px;
+  animation: rewardRise 360ms cubic-bezier(.2,.7,.3,1) both;
+}
+.kj-reward-niche {
+  position: absolute; inset: 0;
+  opacity: 0.9; pointer-events: none;
+  animation: rewardNicheIn 420ms cubic-bezier(.2,.7,.3,1) both;
+}
+/* ショップの3Dプレビューの枠。**PCでは大きく取る**。この層は .kj-app-shell の外へ portal するので、PC横長の CSS zoom(1.4) が掛からない
+   ——168×210 のままだと、大きな画面の真ん中に小さな札が浮くだけになる。縦幅でも頭を押さえ、
+   低い窓でも下の「閉じる」まで画面に収める。 */
+.kj-preview-3d { width: 168px; height: 210px; }
+@media (min-width: 768px) {
+  .kj-preview-3d { width: min(320px, 36vh); height: min(400px, 45vh); }
+}
+/* 壁龕は inset:0 で同じ箱を占めるので、中身は必ず手前へ出す。 */
+.kj-reward-stage > *:not(.kj-reward-niche) { position: relative; z-index: 1; }
+@keyframes rewardNicheIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 0.9; transform: none; } }
+@keyframes rewardRise { from { opacity: 0; transform: translateY(24px) scale(0.94); } to { opacity: 1; transform: none; } }
+
+/* 1拍目: 箱が据えられ、真上から灯りが入り、中で何かが動く。
+   **レア度で煽りを変えないこと**——結果は「開ける」を押した時点で確定しているので、
+   煽りを出し分けると、めくる前に答えが割れる（めくる意味そのものが無くなる）。 */
+.kj-reward-box { position: relative; color: var(--gilt-bright); animation: rewardBoxSet 380ms cubic-bezier(.2,.7,.3,1) both; }
+.kj-reward-box::before {
+  content: ""; position: absolute; left: 50%; bottom: 34%;
+  width: 148px; height: 148px; transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(232,200,116,0.40), transparent 68%);
+  pointer-events: none;
+  animation: rewardGather 760ms ease-in-out 360ms infinite;
+}
+.kj-reward-box svg {
+  position: relative;
+  filter: drop-shadow(0 8px 14px rgba(0,0,0,0.7));
+  animation: rewardBoxStir 540ms ease-in-out 380ms infinite;
+}
+@keyframes rewardBoxSet { from { opacity: 0; transform: translateY(-20px) scale(0.86); } to { opacity: 1; transform: none; } }
+@keyframes rewardGather { 0%, 100% { transform: translateX(-50%) scale(0.82); opacity: 0.45; } 50% { transform: translateX(-50%) scale(1.14); opacity: 1; } }
+@keyframes rewardBoxStir { 0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+
+/* 見出しはロード画面の `SHUFFLING` と同じ組み方にする（同じ「待っている画面」なので揃える）。 */
+.kj-reward-caption {
+  font-family: var(--font-display); font-weight: 700; font-size: 11px;
+  letter-spacing: 0.42em; margin-right: -0.42em; color: var(--gilt);
+  animation: gachaPulseText 1s ease-in-out infinite;
+}
+
+/* レジェンダリー登場時の画面全体フラッシュ。**この層の中に置くこと**——ページ側に置くと
+   z-index がこの層より下になり、光が層の裏に隠れて一度も見えない。 */
+.kj-reward-flash {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: radial-gradient(circle at 50% 42%, rgba(232,200,116,0.6), rgba(232,200,116,0) 68%);
+  animation: legendaryScreenFlash 0.9s ease-out;
+}
+
+/* かぶりのCHIP。**出た品を隠さずに、変換だけを別の行で言う**——品名ごと差し替えていた版は、
+   何が出たのか分からないまま「所持済み」とだけ出て、空振りより素っ気なかった。 */
+.kj-reward-dup {
+  margin-top: 4px; font-family: var(--font-display); font-size: 12px; font-weight: 700;
+  color: var(--gilt-bright); letter-spacing: 0.04em;
+}
+
+.kj-reward-close {
+  position: relative; z-index: 1;
+  padding: 10px 26px; border: none; border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #e8c874, #FF8C00); color: #000;
+  font-family: var(--font-display); font-weight: 700; font-size: 13px; cursor: pointer;
+}
+
+/* ── 銘板（ロゴ） ──────────────────────────────────────────────
+   旧実装のロゴは電飾看板風に明滅していた（marqueeFlicker）。ラスベガスのネオンであって
+   リゾートホテルの品ではないため、明滅を止めて「金箔の箔押し／彫り込み」に変えてある。 */
+.kj-facade-wordmark {
+  font-family: var(--font-display); font-weight: 900;
+  font-size: 30px; letter-spacing: 0.2em; text-indent: 0.2em; white-space: nowrap;
+  background: linear-gradient(180deg, #fdf6e0 0%, #e8c874 36%, #b8923f 64%, #7d6026 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  /* text-shadowは透明な文字の背後に出てしまうため、描画結果に掛かるdrop-shadowで彫りを付ける */
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,0.9)) drop-shadow(0 0 9px rgba(202,164,82,0.2));
+}
+@media (min-width: 768px) {
+  .kj-facade-wordmark { font-size: 32px; }
+}
+
+/* 銘板の上下に渡す繰形（コーニス）。中央の小さな菱形が軸を示す。 */
+.kj-cornice {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; max-width: 280px;
+}
+.kj-cornice::before, .kj-cornice::after {
+  content: ""; flex: 1; height: 1px;
+}
+.kj-cornice::before { background: linear-gradient(90deg, transparent, var(--gilt-line)); }
+.kj-cornice::after { background: linear-gradient(90deg, var(--gilt-line), transparent); }
+.kj-cornice-gem {
+  width: 5px; height: 5px; transform: rotate(45deg);
+  background: var(--gilt-bright); box-shadow: 0 0 6px rgba(232,200,116,0.6);
+}
+
+/* ── 扉（主CTA） ────────────────────────────────────────────────
+   2つの扉は同じ大きさ・同じ形にする。主従は大きさではなく「灯りが点いているか」で示す
+   （ホテルの正面扉も、大きさではなく明かりと装飾で主であることを示している）。 */
+.kj-door {
+  position: relative; width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 8px 10px;
+  cursor: pointer; color: inherit; font: inherit;
+}
+.kj-door::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(ellipse 72% 55% at 50% 0%, rgba(232,200,116,0.22), transparent 66%);
+  animation: facadeLamp 5.5s ease-in-out infinite;
+}
+.kj-door.dim { border-color: var(--gilt-faint); }
+.kj-door.dim::after { background: radial-gradient(ellipse 72% 55% at 50% 0%, rgba(89,162,141,0.12), transparent 66%); animation: none; }
+
+/* 対戦画面：モバイル=盤面のみ / PC=盤面+右の補助列（残り札）。
+   左の補助列の**中身**(所持ポイント・順位)は廃止した——所持ポイントは卓上の持ちチップの山が
+   そのまま表しており、順位はキャリア画面に置き場所があるため。
+   ただし**列そのものは幅だけ残す**（中身は空。gridなので要素は不要）。右にだけ補助列を置くと
+   盤面＝卓の中心が画面の中心から補助列の幅の半分ぶん左へずれ、卓が左寄りに見えるため
+   。左右対称のトラックにすれば卓は必ず画面の中心に来る。
+   卓は縦の帯で大きさが決まる(three/layoutAnchors.js)ので、左列に幅を割いても卓は小さくならない。 */
+.kj-battle-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+}
+@media (min-width: 768px) {
+  .kj-battle-layout {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr) 200px;
+    /* stretch にしているのは、対戦フィールド(.kj-battle-field)に「残り高さいっぱい」を取らせるため。
+       以前は center + .kj-table-seats の固定 min-height(420px) で高さを決めていたが、PC横長は
+       CSS zoom(1.4〜1.6倍)が掛かるため、実ピクセルでは 420*1.4=588px + 操作ドック + ヘッダー…と
+       積み上がり、1280×800 のような一般的なウィンドウでは操作ボタンが画面外にはみ出していた
+       (実際に踏んだ不具合)。高さを可変にすることで、どのウィンドウサイズでも必ず収まる。
+       補助カード(.kj-aux-*)は自前の justify-content で従来どおり縦中央に置く。 */
+    align-items: stretch;
+    gap: 24px;
+    /* 左の空き列(200px)＋gapぶん、2カラム時(840px)より広げてある。ここを広げないと
+       盤面そのものが狭くなり、幅で頭打ちになって卓が縮む。 */
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+    min-height: 0;
+  }
+  /* 1列目は意図的に空のまま（左右対称にして卓を画面中央へ置くためだけのトラック）。 */
+  .kj-battle-layout > .kj-battle-field { grid-column: 2; }
+  .kj-battle-layout > .kj-aux-left { grid-column: 1; }
+  .kj-battle-layout > .kj-aux-right { grid-column: 3; }
+}
+
+/* 左の補助列は長らく意図的に空だった（所持ポイント・順位を撤去した後、卓を画面中央に保つために
+   トラックだけ残してある）。現行ルールでは席の情報（灯り・UP/DOWNの公表）をここへ出す——
+   卓の縦幅がナビとzoomに削られる環境では、卓の上に重ねると札に食い込むため。 */
+/* 補助列に中身が無い対戦画面（席の札は進捗表へ移った）では、トラックごと畳んで卓に幅を返す。
+   200pxのトラックを空のまま残すと、PC横長で卓が400px痩せるだけになる。 */
+@media (min-width: 768px) {
+  .kj-battle-layout--wide { grid-template-columns: minmax(0, 1fr); }
+  /* **列を1本にしたら、盤面の grid-column も戻すこと。** 上の `> .kj-battle-field { grid-column: 2 }`
+     が残ったままだと、宣言していない2本目の暗黙トラックが作られてそこへ置かれる
+     ——盤面が画面の右端に幅361pxで貼り付いた（実際に踏んだ）。 */
+  .kj-battle-layout--wide > .kj-battle-field { grid-column: 1; }
+}
+
+.kj-aux-left, .kj-aux-right { display: none; }
+@media (min-width: 768px) {
+  .kj-aux-left, .kj-aux-right {
+    display: flex; flex-direction: column; justify-content: center; gap: 12px; min-width: 0;
+  }
+}
+
+.kj-battle-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 実際に踏んだ不具合(3D主導レイアウトへの転換中に発見): react-three-fiberの<Canvas>は自分の
+   コンテナをgetBoundingClientRect()で測定し、その結果(CSS zoomの影響を受けた「実寸」)をそのまま
+   canvas.style.width/heightに明示的なpx値として設定する。ところがCSSの`zoom`(.kj-app-shell、
+   PC横長で1.4倍)はその「実寸px値」自体をさらに描画時にzoom倍するため、canvas要素の見た目上の
+   サイズが本来のコンテナより最終的に(zoom倍)だけ大きくなり、親要素(.kj-battle-field内の
+   position:absoluteラッパー)のoverflow:hiddenで右・下側が切り取られる——切り取られた領域に
+   置かれた3Dオブジェクト(自分/相手の場札が対称に近い座標にある時、右側の相手の場札)が完全に
+   見えなくなる、という分かりにくい不具合を引き起こしていた。canvas要素の実寸をCSS側で
+   100%に強制することで、react-three-fiberが設定するpx明示値を上書きし、この二重zoom適用を防ぐ
+   (`!important`が必要: 通常の詳細度ではインラインstyleに勝てないため)。
+
+   **この対処は当初`.kj-battle-field canvas`だけに限定していたが、それが漏れだった**（スキンやボックス開封の3Dが
+   枠に収まっていなかった）。zoomは`.kj-app-shell`に掛かるので、
+   その配下の**全ての**canvasが同じ二重適用を受ける——デッキ編成/スキン画面/報酬ボックスの
+   ショーケース(three/Showcase3D.jsx)は例外なく該当し、PC横長では実測でcanvasが1729×947、
+   親が1235×676（＝ちょうどzoom 1.4倍）と40%はみ出して右下が切り落とされていた。
+   ショーケース側のFitGroupは「可視範囲に収める」計算を正しく行っているのに、その可視範囲
+   そのものが実際の枠より広く取られていたため、**計算は合っているのに収まらない**という
+   分かりにくい症状になる。zoomは文字サイズ設定(small/large)でモバイルにも掛かるので、
+   デスクトップ限定の問題でもない。canvasはすべて自前のものなので、app shell配下に一括で当てる。 */
+.kj-app-shell canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* 3D主導レイアウトへの転換により、自分/相手の名前パネルはもはやCSS flexで場札の位置を
+   追いかける必要がなくなった(shared.jsxのBattleScreenChrome参照: three/screenProjection.jsxが
+   カメラ投影したスクリーン座標にposition:absoluteで直接配置する)。この要素は中身を持たない
+   透明なスペーサーで、.kj-action-dockを盤面の下端へ押し下げる役目だけを負う
+   (絶対配置の3Dシーン/パネルは通常フローに寄与せず高さ0になるため、これが無いとドックが
+   盤面の一番上まで詰め上がってしまう)。高さは固定値ではなくflex:1で「残り全部」を取り、
+   卓の実際の大きさはthree/layoutAnchors.js側が可視範囲から算出する。 */
+.kj-table-seats {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+}
+
+/* 操作エリア(KING/JOKER選択・レイズ/コール/フォールド・結果表示)のドック。
+   フェーズごとに中身の高さが大きく変わる(待機テキスト1行 ⇄ カード2枚 ⇄ ボタン列 ⇄ 結果テキスト)。
+   高さは min-height ではなく固定値にしてある: min-height だと中身の高いフェーズ
+   (KING/JOKER選択: 説明文＋カード2枚)でドックが上へ伸び、その上に絶対配置で敷いてある3Dの卓へ
+   食い込んでしまう(実際に踏んだ不具合)。固定高さにすることで、3D側(three/layoutAnchors.jsの
+   DOCK_HEIGHT_PX)が「卓に使える縦幅」を確実に計算できる——この2つの値は必ず一致させること。
+   枠を独立した箱には見せない(背景色・上ボーダーを持たせずフェルト盤面に溶け込ませる)。 */
+.kj-action-dock {
+  height: 124px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+@media (min-width: 768px) {
+  .kj-action-dock { height: 112px; max-width: 640px; margin: 0 auto; }
+}
+
+/* ─── キーボード操作のヒント（client/src/keybinds.js） ───
+   「画面の並び順 = キーの並び順」が唯一の規則なので、割り当ての文字は必ずその選択肢の
+   すぐ上に出す（凡例を別の場所に置くと対応を目で辿る手間が生まれ、規則の分かりやすさが消える）。
+   物理キーボードのある環境でだけ出す（usePointerFine）。 */
+.kj-keyhint {
+  position: absolute;
+  top: -7px;
+  right: -5px;
+  min-width: 14px;
+  padding: 0 3px;
+  border: 1px solid rgba(232, 200, 116, 0.4);
+  border-radius: 3px;
+  background: #0b0806;
+  color: var(--gilt-dim, #8c8274);
+  font-family: var(--font-display);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 13px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+/* カード等、ボタン自身が position:relative を持たない要素の上に浮かせる場合 */
+.kj-keyhint--float { top: -6px; right: -6px; }
+
+/* キーボードだけで操作する場合、どこにフォーカスがあるか見えないと詰む。
+   マウス操作時には出さない(:focus ではなく :focus-visible)。 */
+.kj-pressable:focus-visible,
+button:focus-visible {
+  outline: 2px solid rgba(232, 200, 116, 0.85);
+  outline-offset: 2px;
+}
+
+/* 賭け卓を想起させるフェルト風の下地（対戦フィールドパネル背景に薄く敷く）。
+   装備中のテーブルスキン(TableArt.jsxのTABLE_THEMES)は--felt-*のCSS変数として
+   BattleScreenChrome(shared.jsx)からインラインstyleで渡される。未指定時は既存の暗緑にフォールバックする。 */
+.kj-felt-panel {
+  background:
+    radial-gradient(120% 140% at 50% 0%, var(--felt-accent, rgba(232,200,116,0.05)), transparent 60%),
+    radial-gradient(140% 160% at 50% 100%, var(--felt-inner, var(--felt)), var(--felt-outer, var(--color-panel)) 70%);
+  border: 1px solid var(--felt-rim, transparent);
+  /* 単なる角丸パネルではなく「卓」らしいレール(縁)を持たせるため、内側の光沢に加えて
+     外側にも二重リングを重ねる(木目/レザー調の縁取りをグラデーションの重ね塗りで表現、
+     イラスト制作パイプラインが無いためSVG/CSSの範囲で完結させる)。テーブルスキンの
+     --felt-glow はそのまま活かし、加算する形にする（スキン切り替えの仕組みは壊さない）。 */
+  box-shadow:
+    inset 0 0 60px var(--felt-glow, transparent),
+    inset 0 0 0 5px rgba(0,0,0,0.35),
+    inset 0 0 0 6px rgba(232,200,116,0.14),
+    0 6px 20px rgba(0,0,0,0.45);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* 3Dの卓(three/Showcase3D.jsxのShowdownTable3D)を内側に敷く場合。**このCSS製の卓の意匠は必ず
+   打ち消すこと**——残すと角丸長方形の縁取り(上のinset二重リング)と3Dの卓の木縁が二重に見える
+   （対戦画面を3D化した際に実際に踏んだ「旧テーブルの二重表示」と同じ失敗）。
+   .kj-felt-panel自体は3Dを読み込むまでの下地として使い続けるので、クラスは分けて上書きする。 */
+.kj-felt-panel--3d {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+
+/* ── 箔押しの文字（.kj-facade-wordmarkと同じ手法を汎用化したもの）──
+   背景グラデーションをbackground-clip:textで文字にクリップするため、**text-shadowは
+   透明な文字の背後に出てしまい使えない**。彫りの陰は描画結果に掛かるdrop-shadowで付ける。
+   光沢(sheen)は、斜めの白い帯をもう1枚の背景レイヤーとして重ね、その
+   background-positionだけを走らせて出す（2レイヤーぶんをカンマで並べ、下地側は固定値のまま）。 */
+.kj-foil {
+  font-family: var(--font-display); font-weight: 900;
+  background-image:
+    linear-gradient(105deg, transparent 42%, rgba(255,255,255,0.85) 50%, transparent 58%),
+    linear-gradient(180deg, #fdf6e0 0%, #e8c874 34%, #b8923f 62%, #7d6026 100%);
+  background-size: 55% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-position: -80% 50%, 0 50%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,0.9)) drop-shadow(0 0 10px rgba(202,164,82,0.28));
+}
+/* 喪失側は「光の不在」で表す。赤いネオン枠にすると安っぽくなる上、通常ラウンドで赤が既に
+   fold(降りる)の意味を持っているため、色ではなく金→鉛の落差そのもので負けを語らせる。 */
+.kj-foil--ash {
+  background-image:
+    linear-gradient(105deg, transparent 42%, rgba(255,255,255,0.26) 50%, transparent 58%),
+    linear-gradient(180deg, #9a8f7e 0%, #6b6154 38%, #46403a 68%, #2a2622 100%);
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,0.95));
+}
+/* 伏兵(ポイント王)側の紫水晶。金の箔と同じ構造のまま色相だけを変える。 */
+.kj-foil--amethyst {
+  background-image:
+    linear-gradient(105deg, transparent 42%, rgba(255,255,255,0.8) 50%, transparent 58%),
+    linear-gradient(180deg, #efdcff 0%, #b06bff 36%, #7a3fc4 66%, #40206b 100%);
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,0.9)) drop-shadow(0 0 10px rgba(176,107,255,0.3));
+}
+.kj-foil-sheen { animation: foilSheen 1.25s cubic-bezier(.4,0,.2,1) 0.16s 1; }
+@keyframes foilSheen {
+  from { background-position: -80% 50%, 0 50%; }
+  to { background-position: 210% 50%, 0 50%; }
+}
+
+/* 勝敗そのものの演出は勝ち/負けで色分けしない、ニュートラルな黒フラッシュ+揺れのみ
+   （宣言の的中/失敗に注目を集中させるため）。 */
+@keyframes battleShakeNeutral {
+  0% { transform: translate(0,0); }
+  20% { transform: translate(-3px,-3px); }
+  40% { transform: translate(3px,-1px); }
+  60% { transform: translate(-2px,2px); }
+  80% { transform: translate(2px,0); }
+  100% { transform: translate(0,0); }
+}
+@keyframes neutralFlash {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+
+/* 対戦画面ヘッダー（ブラケット/ラウンド・ベスト3の進行を横並びで表示）。
+   このヘッダーの高さは、そのまま卓に使える縦幅から差し引かれる（盤面がflex:1のため）。
+   3行3列グリッドではカードの大きさが卓の縦幅で決まるので、ここのpaddingを増やすことは
+   カードを小さくすることと同義。増やす前に「その情報は本当に常時必要か」を先に問うこと。
+   背景は寒色黒(#0a0a1e)から暖色黒へ——カード/卓が暖色で組まれているのにヘッダーだけ
+   青紫黒だと、盤面の真上で世界が切り替わって見えていた。 */
+.kj-battle-header {
+  padding: 5px 12px; display: flex; justify-content: space-between; align-items: center;
+  background: #0b0806; border-bottom: 1px solid var(--hairline); flex-shrink: 0;
+}
+
+
+/* ── タイトル画面（サイトを開いた最初の一枚） ──────────────────────
+   新しい意匠は作らず、ファサードの建材（夜空・アップライト・紋章・箔押しの銘板・繰形）を
+   そのまま流用する。`.kj-app-shell`の外側に置く固定オーバーレイなので、PC横長のCSS zoom(1.4)は
+   掛からない——文字は`clamp(..vw..)`で画面幅から直接決める。 */
+.kj-title {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 32px 24px;
+  background: linear-gradient(180deg, #05040a 0%, #0b0806 56%, #100b07 100%);
+  cursor: pointer; isolation: isolate; /* 子の.kj-facade-sky(z-index:-2)を背景の上に留める */
+  animation: titleIn 0.75s ease both;
+}
+.kj-title--leaving { animation: titleOut 0.46s ease forwards; pointer-events: none; }
+@keyframes titleIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes titleOut { from { opacity: 1; } to { opacity: 0; } }
+
+/* **銘板の幅は文字の幅より広く取ること。** 繰形（上下の細い金線）は文字を挟む額縁なので、
+   文字がそこからはみ出すと額縁に見えなくなる。PC横長では見出しが実測487pxまで伸びるのに
+   繰形が340pxで頭打ちになっており、線より文字の方が1.4倍長い状態だった（縦長では
+   文字262px・線340pxで正しく収まっていたので、横長でだけ崩れていた）。 */
+.kj-title-lockup { width: 100%; max-width: 520px; }
+/* ファサード内の銘板より一回り大きい組み。`.kj-facade-wordmark`のmin-width:768pxルールより
+   後に置くこと（同じ詳細度なので、後勝ちで初めてこの寸法が効く）。 */
+/* letter-spacing込みで10文字並ぶので、vw係数は見た目の印象より小さく取る必要がある
+   （10.5vwにしたところモバイル390pxで左右の余白が完全に消えた）。 */
+.kj-title-wordmark { font-size: clamp(26px, 8vw, 58px); letter-spacing: 0.18em; text-indent: 0.18em; }
+.kj-title .kj-cornice { max-width: 500px; }
+
+.kj-title-start { animation: titleStart 2s ease-in-out infinite; }
+@keyframes titleStart { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+html[data-reduce-motion="true"] .kj-title-start { animation: none; opacity: 0.8; }
+
+/* ─── 実践チュートリアルのスポットライト ───
+   「今どれを押すか」を本物のボタンの上で示す。説明用の偽ボタンを別に描くと、そこで覚えた
+   位置が本番と一致しなくなるため、必ず実物(KJChoicePanel/BetActionPanel)に掛ける。
+   要素を動かさないこと——押す対象が動くと狙いづらくなるので、拡大縮小ではなく光だけで示す。 */
+.kj-spotlight {
+  position: relative;
+  animation: kjSpotlight 1.4s ease-in-out infinite;
+}
+.kj-spotlight::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 12px;
+  border: 2px solid var(--gilt-bright, #e8c874);
+  pointer-events: none;
+}
+@keyframes kjSpotlight {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(232, 200, 116, 0.55)); }
+  50%      { filter: drop-shadow(0 0 12px rgba(232, 200, 116, 0.95)); }
+}
+/* モーション低減時は明滅を止め、枠だけで示す（意味は失わない） */
+html[data-reduce-motion="true"] .kj-spotlight { animation: none; }
+
+/* ─── 配られた札がドックの手札に届く（client/src/three/dealTiming.js と対の関係） ───
+   カードシューから滑ってくる3Dの札と、ここに並ぶDOMの手札は**同じ1回の配札**を指している。
+   尺を合わせないと、機械から出た札が着く前に手札が増える——実際にそうなっていて、
+   「新しい札が出てくる前から手札が2枚ある」という形で見えていた。
+
+   animation-delay + fill-mode:backwards を使うのは、**タイマーもstateも持たずに
+   「まだ届いていない」を表せる**から（要素が生えた時刻＝局の頭が起点になる）。
+   遅延は selfCardLandsAt() が算出して inline style で渡す。
+   持ち越した札にはこのクラスを付けない——あれは配られたのではなく元から持っていた札。 */
+.kj-card-arrive {
+  animation: kjCardArrive 260ms ease-out backwards;
+}
+@keyframes kjCardArrive {
+  from { opacity: 0; transform: translateY(-16px) scale(0.82); }
+  to   { opacity: 1; transform: none; }
+}
+/* モーション低減時は動きだけでなく**待ちも消す**。動かないのに1秒近く空席なのは、
+   前庭系への配慮とは何の関係もないただの遅い画面になる（!importantは上の横断ルールと同格）。 */
+html[data-reduce-motion="true"] .kj-card-arrive { animation-delay: 0ms !important; }

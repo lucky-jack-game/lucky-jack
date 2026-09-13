@@ -1,0 +1,18 @@
+{
+  "name": "lucky-jack",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LUCKY JACK - ライフを賭けて読み合う1対1のカードゲーム（ブラウザで遊べる）",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "test": "node --test shared/*.test.js client/src/*.test.js client/src/battle/*.test.js client/src/three/*.test.js server/*.test.js",
+    "sim": "node tools/simulate.mjs",
+    "sim:dead": "node tools/measure-deadrounds.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3"
+  }
+}

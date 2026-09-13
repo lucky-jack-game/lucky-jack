@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# 予告編の動画（18MB）。コードの履歴とは別に管理する
+*.mp4
