@@ -119,9 +119,11 @@ export const ACHIEVEMENTS = [
   // 判定は isFlawlessWin ただ1つ（下記）。**ここに式を展開し直さないこと**——完封ボックス側にも
   // 同じ式が書かれていたせいで、同じ不具合が2箇所に同時に入っていた。
   { id: "flawless", title: "無傷", desc: "ライフを1つも失わずに勝つ", check: (h) => h.some(isFlawlessWin) },
-  // 「崖」の閾値は totalLives/3 未満（キャリア画面・シミュレータの逆転率と同じ定義）。
-  // 固定値にするとモードによって意味が変わる（カジュアル6・ランク7）。
-  { id: "comeback", title: "崖っぷち", desc: "残りライフが3分の1を切ってから勝つ", check: (h) => h.some((e) => e.won && e.minLives * 3 < e.totalLives) },
+  // 「崖」はモードに関わらず**残りライフ1**。比で決めると同じ実績の条件がモードで変わり、
+  // 説明文でも「3分の1」のように数え直させることになる。1まで落ちると1局に賭けられる額も1になるので、
+  // そこから勝つのは実測でカジュアルの1試合あたり約1%——狙って取る実績として残す。
+  // シミュレータの逆転率（開始ライフの1/3以下）とは別の物差し。
+  { id: "comeback", title: "崖っぷち", desc: "残りライフ1から逆転して勝つ", check: (h) => h.some((e) => e.won && e.minLives <= 1) },
   { id: "reader", title: "読み師", desc: "1試合で3回、相手を降ろす", check: (h) => h.some((e) => (e.foldsWon || 0) >= 3) },
   { id: "iron_nerve", title: "鉄の胆力", desc: "サドンデスを制する", check: (h) => h.some((e) => e.won && e.suddenDeath) },
   // ── 段位到達（オンラインのランクマッチのみ）──

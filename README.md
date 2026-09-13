@@ -62,7 +62,7 @@ npm run dev --prefix client     # http://localhost:5173
 npm run build --prefix client   # client/dist に出力
 ```
 
-テスト（ルール・進行・報酬・実績・ショップなど 124 件）：
+テスト（ルール・進行・報酬・実績・ショップなど 125 件）：
 
 ```sh
 npm install --prefix server

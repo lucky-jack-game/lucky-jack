@@ -79,12 +79,12 @@ describe("実績の条件は、この集計から実際に判定できる", () =
   // **ここが通らない実績は「誰も取れない実績」**で、画面には何も出ないので気付けない。
   const entry = {
     won: true, draw: false, online: true, mode: "ranked",
-    roundsPlayed: 7, livesLeft: 7, totalLives: 7, minLives: 2,
+    roundsPlayed: 7, livesLeft: 7, totalLives: 7, minLives: 1,
     reason: "knockout", suddenDeath: true, foldsWon: 3, foldsMade: 1,
     oneEatsTen: true, queenWin: true, queenSlain: true,
   };
   const byId = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
-  // flawless はこの entry では成立しない（minLives 2 ＝ ライフを失っている）。
+  // flawless はこの entry では成立しない（minLives 1 ＝ ライフを失っている）。
   // 「1つも失わずに勝つ」と「崖まで落ちてから勝つ」は同じ試合では両立しないので、下で別に見る。
   const historyOnly = ["first_match", "first_win", "one_eats_ten", "queen_win", "queen_slain",
     "comeback", "reader", "iron_nerve"];
@@ -96,8 +96,14 @@ describe("実績の条件は、この集計から実際に判定できる", () =
     });
   }
 
-  test("comeback は崖(totalLives/3未満)まで落ちていないと解放されない", () => {
-    assert.equal(byId.comeback.check([{ ...entry, minLives: 5 }]), false);
+  test("comeback は残りライフ1まで落ちていないと解放されない（モードに関わらず同じ）", () => {
+    assert.equal(byId.comeback.check([{ ...entry, minLives: 2 }]), false);
+    assert.equal(byId.comeback.check([{ ...entry, mode: "casual", totalLives: 6, minLives: 1 }]), true);
+    assert.equal(byId.comeback.check([{ ...entry, mode: "casual", totalLives: 6, minLives: 2 }]), false);
+  });
+
+  test("comeback は残りライフ1まで落ちても、負けた試合では解放されない", () => {
+    assert.equal(byId.comeback.check([{ ...entry, won: false, minLives: 1 }]), false);
   });
 
   // 一度もライフを失わずに勝った試合。ノックアウトなので **livesLeft は開始ライフを超える**
