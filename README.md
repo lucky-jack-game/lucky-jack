@@ -4,7 +4,9 @@
 
 **遊ぶ：** https://lucky-jack-game.github.io/lucky-jack/
 
-PC（横画面）とスマートフォン（縦画面）の画面幅に対応している。動作確認は Chromium で 1280px 幅と 390px 幅の両方で行っている。
+PC（横画面）とスマートフォン（縦画面）の画面幅に対応している。
+
+動作確認済み Windows Google Chrome、iOS Google Chrome、iOS Safari。
 
 ## どんなゲームか
 
